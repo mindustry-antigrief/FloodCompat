@@ -1,6 +1,10 @@
 package floodcompat;
 
 import arc.*;
+import arc.audio.Sound;
+import arc.math.Mathf;
+import arc.math.geom.Geometry;
+import arc.struct.ObjectSet;
 import arc.struct.Seq;
 import arc.util.*;
 import mindustry.content.*;
@@ -9,9 +13,12 @@ import mindustry.entities.abilities.*;
 import mindustry.entities.bullet.*;
 import mindustry.game.*;
 import mindustry.gen.*;
+import mindustry.graphics.Pal;
 import mindustry.mod.*;
+import mindustry.world.Tile;
 import mindustry.world.blocks.defense.*;
 import mindustry.world.blocks.defense.turrets.*;
+import mindustry.world.blocks.power.ImpactReactor;
 
 import java.util.Objects;
 
@@ -20,8 +27,9 @@ import static mindustry.content.Blocks.*;
 import static mindustry.Vars.*;
 
 public class floodcompat extends Mod{
-    boolean flood, applied, enabled;
-    Ability pulsarAbility, brydeAbility;
+    static boolean flood, applied, enabled;
+    static Ability pulsarAbility, brydeAbility;
+    static ObjectSet<Tile> allTiles = new ObjectSet<>();
     public floodcompat(){
         Log.info("Flood Compatibility loaded!");
 
@@ -32,16 +40,17 @@ public class floodcompat extends Mod{
 
         Events.on(EventType.ClientLoadEvent.class, e -> {
             if(Structs.contains(Version.class.getDeclaredFields(), var -> var.getName().equals("foos"))){
-                ui.showInfo("[accent]Foo's Client [scarlet]detected, [cyan]FloodCompat[] is unnecessary!");
                 enabled = false;
             }else enabled = true;
         });
 
         netClient.addPacketHandler("flood", (integer) -> {
             if(Strings.canParseInt(integer)){
+                ui.chatfrag.addMessage("[lime]Server check succeeded!");
                 flood = true;
-                if(applied) return;
-                ui.chatfrag.addMessage("[lime]Server check succeeded!\n[accent]Applying flood changes!");
+
+                if(applied || !enabled) return;
+                ui.chatfrag.addMessage("[accent]Applying flood changes!");
 
                 state.rules.hideBannedBlocks = true;
                 state.rules.bannedBlocks.addAll(Blocks.lancer, Blocks.arc);
@@ -158,16 +167,52 @@ public class floodcompat extends Mod{
             }
         });
 
+        netClient.addPacketHandler("anticreep", (string) -> {
+            String[] vars = string.split(":");
+
+            int pos = Strings.parseInt(vars[0]), rad = Strings.parseInt(vars[1]),
+            time = Strings.parseInt(vars[2]), team = Strings.parseInt(vars[3]);
+
+            if(pos > 0 && rad > 0 && time > 0 && team > 0){
+                Tile tile = world.tiles.getp(pos);
+                var color = Team.get(team).color;
+
+                Seq<Tile> tiles = new Seq<>();
+                Geometry.circle(tile.x, tile.y, rad, (cx, cy) -> {
+                    Tile t = world.tile(cx, cy);
+                    if(t != null && !allTiles.contains(t)){
+                        tiles.add(t);
+                    }
+                });
+                allTiles.addAll(tiles);
+
+                var startTime = Time.millis();
+
+                Timer.schedule(() -> {
+                    tiles.each(t -> {
+                        Timer.schedule(() -> {
+                            var sizeMultiplier = 1 - (Time.millis() - startTime) / 1000f / time;
+                            NetClient.effect(Fx.lightBlock, t.getX(), t.getY(), Mathf.random(0.01f, 1.5f * sizeMultiplier), color);
+                        }, Mathf.random(1f));
+                    });
+                }, 0, 1, time);
+
+                Timer.schedule(() -> {
+                    allTiles.removeAll(tiles);
+                    tiles.clear();
+                }, time);
+            }
+        });
+
         Events.on(EventType.WorldLoadEvent.class, e -> {
-            if(!enabled) return;
             // no delay if the client's hosting, that would break stuff!
             int delay = net.client() ? 3 : 0;
             flood = false;
 
-            if(delay > 0) Call.serverPacketReliable("flood", "0.4");
+            if(delay > 0) Call.serverPacketReliable("flood", "0.5");
             Timer.schedule(() -> {
                 // this is for cleanup only
-                if(!flood){
+                if(!flood && enabled){
                     if(net.client()) ui.chatfrag.addMessage("[scarlet]Server check failed...\n[accent]Playing on flood? Try rejoining!\nHave a nice day!");
                     if(applied){
                         Seq.with(scrapWall, titaniumWall, thoriumWall).each(w -> w.solid = true);
