@@ -7,6 +7,7 @@ import arc.math.geom.Geometry;
 import arc.struct.ObjectSet;
 import arc.struct.Seq;
 import arc.util.*;
+import mindustry.ai.UnitCommand;
 import mindustry.content.*;
 import mindustry.core.*;
 import mindustry.entities.abilities.*;
@@ -34,6 +35,10 @@ public class floodcompat extends Mod{
         Log.info("Flood Compatibility loaded!");
 
         Events.on(EventType.ContentInitEvent.class, e -> {
+            var cmds = new UnitCommand[]{UnitCommand.moveCommand, UnitCommand.boostCommand, UnitCommand.mineCommand};
+            pulsar.commands = cmds;
+            quasar.commands = cmds;
+
             pulsarAbility = pulsar.abilities.first();
             brydeAbility = bryde.abilities.first();
         });
@@ -57,9 +62,7 @@ public class floodcompat extends Mod{
                 state.rules.revealedBlocks.addAll(Blocks.coreShard, Blocks.scrapWall, Blocks.scrapWallLarge, Blocks.scrapWallHuge, Blocks.scrapWallGigantic);
 
                 Seq.with(scrapWall, titaniumWall, thoriumWall).each(w -> w.solid = false);
-                Seq.with(berylliumWall, tungstenWall, carbideWall).each(w -> {
-                    w.insulated = w.absorbLasers = true;
-                });
+                Seq.with(berylliumWall, tungstenWall, carbideWall).each(w -> w.absorbLasers = true);
                 ((Wall) phaseWall).chanceDeflect = 0;
                 ((Wall) surgeWall).lightningChance = 0;
                 ((Wall) reinforcedSurgeWall).lightningChance = 0;
@@ -205,11 +208,13 @@ public class floodcompat extends Mod{
         });
 
         Events.on(EventType.WorldLoadEvent.class, e -> {
+            allTiles.clear();
+
             // no delay if the client's hosting, that would break stuff!
             int delay = net.client() ? 3 : 0;
             flood = false;
 
-            if(delay > 0) Call.serverPacketReliable("flood", "0.5");
+            if(delay > 0) Call.serverPacketReliable("flood", "0.6");
             Timer.schedule(() -> {
                 // this is for cleanup only
                 if(!flood && enabled){
