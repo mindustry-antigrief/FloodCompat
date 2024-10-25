@@ -1,71 +1,129 @@
 package floodcompat
 
-import arc.*
-import arc.graphics.*
-import arc.struct.*
+import arc.Events
+import arc.graphics.Color
+import arc.math.Mathf
+import arc.math.geom.Geometry
+import arc.struct.Seq
 import arc.util.*
 import mindustry.Vars.*
-import mindustry.ai.*
-import mindustry.content.*
+import mindustry.ai.UnitCommand
 import mindustry.content.Blocks.*
+import mindustry.content.Fx
+import mindustry.content.Items
 import mindustry.content.UnitTypes.*
-import mindustry.entities.abilities.*
-import mindustry.entities.bullet.*
-import mindustry.game.*
-import mindustry.gen.*
-import mindustry.graphics.*
-import mindustry.mod.*
-import mindustry.world.blocks.defense.turrets.*
-import java.lang.reflect.*
+import mindustry.core.Version
+import mindustry.entities.abilities.Ability
+import mindustry.entities.abilities.ForceFieldAbility
+import mindustry.entities.bullet.BulletType
+import mindustry.entities.bullet.FlakBulletType
+import mindustry.entities.bullet.LaserBulletType
+import mindustry.entities.bullet.SapBulletType
+import mindustry.game.EventType
+import mindustry.game.Team
+import mindustry.gen.Call
+import mindustry.graphics.Pal
+import mindustry.mod.Mod
+import mindustry.world.Tile
+import mindustry.world.blocks.defense.turrets.ItemTurret
+import java.lang.reflect.Field
 
 // Based on old foo's implementation
 class FloodCompat : Mod() {
     /** Vanilla values of changed vars for restoration later */
     private val defaults: MutableList<Any> = mutableListOf()
+    /** All the tiles that currently have effects drawn on top */
+    private val allTiles = Seq<Tile>()
     /* Flood changes the bullet type and the overwrites system doesn't support that so we have to manage this manually */
     private var foreshadowBulletVanilla: BulletType? = null
 
     /** Used to prevent flood from applying twice */
     private var applied: Boolean = false
+    /** Defines whether the mod's running alongside foo's client */
+    private var foo: Boolean = false
 
 
     override fun init() {
         Log.info("Flood Compatibility loaded!")
 
-
+        Events.on(EventType.ClientLoadEvent::class.java) {
+            foo = (Structs.contains(Version::class.java.declaredFields) { it.name == "foos" })
+        }
         Events.on(EventType.ResetEvent::class.java) {
             disable()
             applied = false
         }
-        Events.on(EventType.WorldLoadEvent::class.java) { Log.info("Send flood"); Call.serverPacketReliable("flood", "1.0") }
-        netClient.addPacketHandler("flood") { if (Strings.canParseInt(it)) enable() }
+        Events.on(EventType.WorldLoadEvent::class.java) { Log.info("Send flood"); Call.serverPacketReliable("flood", "1.0"); Timer.schedule({ notif() }, 3f); allTiles.clear() }
+        netClient.addPacketHandler("flood") { if (Strings.canParseInt(it) && !foo) enable() }
+        netClient.addPacketHandler("anticreep") { string: String ->
+            val vars = string.split(':')
+
+            val pos = Strings.parseInt(vars[0])
+            val rad = Strings.parseInt(vars[1])
+            val time = Strings.parseInt(vars[2])
+            val team = Strings.parseInt(vars[3])
+
+            if (pos > 0 && rad > 0 && time > 0 && team > 0) {
+                val tile = world.tile(pos)
+                val color = Team.get(team).color
+
+                val tiles = Seq<Tile>()
+                Geometry.circle(tile.x.toInt(), tile.y.toInt(), rad) { cx: Int, cy: Int ->
+                    val t = world.tile(cx, cy)
+                    if (t != null && !allTiles.contains(t)) {
+                        tiles.add(t)
+                    }
+                }
+                allTiles.addAll(tiles)
+
+                val startTime = Time.millis()
+
+                Timer.schedule({
+                    val sizeMultiplier = 1 - (Time.millis() - startTime) / 1000f / time
+                    tiles.each { t: Tile ->
+                        Timer.schedule({
+                            Fx.lightBlock.at(
+                                t.getX(),
+                                t.getY(),
+                                Mathf.random(0.01f, 1.5f * sizeMultiplier),
+                                color
+                            )
+                        }, Mathf.random(1f))
+                    }
+                }, 0f, 1f, time)
+
+                Timer.schedule({
+                    allTiles.removeAll(tiles)
+                    tiles.clear()
+                }, time.toFloat())
+            }
+        }
+    }
+
+    private fun notif(){
+        if (net.client() && !foo) ui.chatfrag.addMessage("[scarlet]Server check failed...\n[accent]Playing on flood? Try rejoining!\nHave a nice day!")
     }
 
     /** Applies flood changes */
     private fun enable() {
         if (applied) throw AssertionError("Tried to enable flood even though it was already enabled!")
         applied = true
+
+        ui.chatfrag.addMessage("[lime]Server check succeeded!\n[accent]Applying flood changes.")
         Log.info("Enabling FloodCompat")
         Time.mark()
-
-        // Rules (not overwrites since the game overwrites them automatically when returning to menu
-        state.rules.hideBannedBlocks = true
-        state.rules.bannedBlocks.addAll(lancer, arc)
-        state.rules.revealedBlocks.addAll(coreShard, scrapWall, scrapWallLarge, scrapWallHuge, scrapWallGigantic)
 
         overwrites( // This system is mostly functional and saves a lot of copy pasting.
             //Blocks
             scrapWall, "solid", false,
             titaniumWall, "solid", false,
             thoriumWall, "solid", false,
-            berylliumWall, "absorbLasers", false,
-            tungstenWall, "absorbLasers", false,
-            carbideWall, "absorbLasers", false,
+            berylliumWall, "absorbLasers", true,
+            tungstenWall, "absorbLasers", true,
+            carbideWall, "absorbLasers", true,
             phaseWall, "chanceDeflect", 0,
             surgeWall, "lightningChance", 0,
             reinforcedSurgeWall, "lightningChance", 0,
-            mender, "reload", 800,
-            mendProjector, "reload", 500,
             radar, "health", 500,
             shockwaveTower, "health", 2000,
             thoriumReactor, "health", 1400,
@@ -86,13 +144,11 @@ class FloodCompat : Mod() {
             parallax, "scaledForce", 7,
             parallax, "range", 230,
             parallax, "damage", 6,
-            forceProjector, "shieldHealth", 2500,
             // Units
             pulsar, "commands", arrayOf(UnitCommand.moveCommand, UnitCommand.boostCommand, UnitCommand.mineCommand),
             quasar, "commands", arrayOf(UnitCommand.moveCommand, UnitCommand.boostCommand, UnitCommand.mineCommand),
             pulsar, "abilities", Seq<Ability>(0), // pulsar.abilities.clear()
             bryde, "abilities", Seq<Ability>(0), // pulsar.abilities.clear()
-            *merui.weapons.flatMap<Any> { Seq.with(it.bullet, "collides", true) }.toArray(),
             *quad.weapons.flatMap { Seq.with(
                 it, "bullet.damage", 100,
                 it, "bullet.splashDamage", 250,
@@ -104,11 +160,13 @@ class FloodCompat : Mod() {
             ) }.toArray(),
             *scepter.weapons.flatMap { if (it.name == "scepter-weapon") Seq.with(
                 it, "bullet.pierce", true,
-                it, "bullet.pierceCap", 3
+                it, "bullet.pierceCap", 8
             ) else Seq.with(it, "bullet.damage", 25) }.toArray(),
             *reign.weapons.flatMap { Seq.with(
                 it, "bullet.damage", 120,
-                it, "bullet.fragBullet.damage", 30
+                it, "bullet.pierceCap", 15,
+                it, "bullet.fragBullet.damage", 30,
+                it, "bullet.fragBullet.pierceCap", 6
             ) }.toArray(),
             crawler, "targetAir", false,
             spiroct, "targetAir", false,
@@ -119,8 +177,14 @@ class FloodCompat : Mod() {
             arkyid, "hitSize", 21,
             *arkyid.weapons.flatMap {
                 if (it.bullet is SapBulletType) Seq.with(it, "bullet.sapStrength", 0)
-                else Seq.with(it, "bullet.pierceBuilding", true,
-                              it, "bullet.pierceCap", 7
+                else Seq.with(
+                    it, "bullet.collidesAir", true,
+                    it, "bullet.collidesGround", true,
+                    it, "bullet.splashDamagePierce", true,
+                    it, "bullet.splashDamageRadius", 20,
+                    it, "bullet.splashDamage", 15,
+                    it, "bullet.lightning", 0,
+                    it, "bullet.buildingDamageMultiplier", 0.01F
                 )
             }.toArray(),
             crawler, "health", 100,
@@ -147,7 +211,25 @@ class FloodCompat : Mod() {
                 it, "regen", 16,
                 it, "max", 15_000
             ) else Seq.with() }.toArray(),
-            *minke.weapons.flatMap { if (it.bullet is FlakBulletType) Seq.with(it.bullet, "collidesGround", true) else Seq.with<Any>()}.toArray()
+            *minke.weapons.flatMap { if (it.bullet is FlakBulletType) Seq.with(it.bullet, "collidesGround", true) else Seq.with<Any>()}.toArray(),
+            *vanquish.weapons.flatMap<Any> { if (it.name == "vanquish-weapon") Seq.with(
+                it.bullet, "splashDamagePierce", true,
+                it.bullet.fragBullet, "splashDamagePierce", true
+            ) else Seq.with() }.toArray(),
+            *conquer.weapons.first().bullet.spawnBullets.flatMap<Any> { Seq.with(it, "splashDamagePierce", true) }.toArray(),
+            *merui.weapons.flatMap<Any> { Seq.with(
+                it.bullet, "collides", true,
+                it.bullet, "splashDamagePierce", true
+            ) }.toArray(),
+            *anthicus.weapons.flatMap { Seq.with(it, "bullet.splashDamagePierce", true) }.toArray(),
+            *quell.weapons.flatMap { Seq.with(
+                it.bullet, "splashDamagePierce", true,
+                it.bullet, "buildingDamageMultiplier", 0.5F
+            ) }.toArray(),
+            *disrupt.weapons.flatMap { Seq.with(
+                it.bullet, "splashDamagePierce", true,
+                it.bullet, "buildingDamageMultiplier", 0.5F
+            ) }.toArray()
         )
 
         // TODO: Implement anticreep packet
