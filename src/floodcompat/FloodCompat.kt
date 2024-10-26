@@ -1,60 +1,48 @@
 package floodcompat
 
-import arc.Events
-import arc.graphics.Color
-import arc.math.Mathf
-import arc.math.geom.Geometry
-import arc.struct.Seq
+import arc.*
+import arc.graphics.*
+import arc.math.*
+import arc.math.geom.*
+import arc.struct.*
 import arc.util.*
 import mindustry.Vars.*
-import mindustry.ai.UnitCommand
+import mindustry.ai.*
 import mindustry.content.Blocks.*
-import mindustry.content.Fx
-import mindustry.content.Items
+import mindustry.content.*
 import mindustry.content.UnitTypes.*
-import mindustry.core.Version
-import mindustry.entities.abilities.Ability
-import mindustry.entities.abilities.ForceFieldAbility
-import mindustry.entities.bullet.BulletType
-import mindustry.entities.bullet.FlakBulletType
-import mindustry.entities.bullet.LaserBulletType
-import mindustry.entities.bullet.SapBulletType
-import mindustry.game.EventType
-import mindustry.game.Team
-import mindustry.gen.Call
-import mindustry.graphics.Pal
-import mindustry.mod.Mod
-import mindustry.world.Tile
-import mindustry.world.blocks.defense.turrets.ItemTurret
-import java.lang.reflect.Field
+import mindustry.entities.abilities.*
+import mindustry.entities.bullet.*
+import mindustry.game.*
+import mindustry.gen.*
+import mindustry.graphics.*
+import mindustry.mod.*
+import mindustry.world.*
+import mindustry.world.blocks.defense.turrets.*
+import java.lang.reflect.*
 
 // Based on old foo's implementation
 class FloodCompat : Mod() {
     /** Vanilla values of changed vars for restoration later */
     private val defaults: MutableList<Any> = mutableListOf()
     /** All the tiles that currently have effects drawn on top */
-    private val allTiles = Seq<Tile>()
+    private val allTiles = ObjectSet<Tile>()
     /* Flood changes the bullet type and the overwrites system doesn't support that so we have to manage this manually */
     private var foreshadowBulletVanilla: BulletType? = null
 
     /** Used to prevent flood from applying twice */
     private var applied: Boolean = false
-    /** Defines whether the mod's running alongside foo's client */
-    private var foo: Boolean = false
 
 
     override fun init() {
         Log.info("Flood Compatibility loaded!")
 
-        Events.on(EventType.ClientLoadEvent::class.java) {
-            foo = (Structs.contains(Version::class.java.declaredFields) { it.name == "foos" })
-        }
         Events.on(EventType.ResetEvent::class.java) {
             disable()
             applied = false
         }
         Events.on(EventType.WorldLoadEvent::class.java) { Log.info("Send flood"); Call.serverPacketReliable("flood", "1.0"); Timer.schedule({ notif() }, 3f); allTiles.clear() }
-        netClient.addPacketHandler("flood") { if (Strings.canParseInt(it) && !foo) enable() }
+        netClient.addPacketHandler("flood") { if (Strings.canParseInt(it)) enable() }
         netClient.addPacketHandler("anticreep") { string: String ->
             val vars = string.split(':')
 
@@ -101,7 +89,7 @@ class FloodCompat : Mod() {
     }
 
     private fun notif(){
-        if (net.client() && !foo) ui.chatfrag.addMessage("[scarlet]Server check failed...\n[accent]Playing on flood? Try rejoining!\nHave a nice day!")
+        if (net.client()) ui.chatfrag.addMessage("[scarlet]Server check failed...\n[accent]Playing on flood? Try rejoining!\nHave a nice day!")
     }
 
     /** Applies flood changes */
