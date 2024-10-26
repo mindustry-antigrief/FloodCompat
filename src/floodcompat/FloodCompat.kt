@@ -89,7 +89,7 @@ class FloodCompat : Mod() {
     }
 
     private fun notif(){
-        if (net.client()) ui.chatfrag.addMessage("[scarlet]Server check failed...\n[accent]Playing on flood? Try rejoining!\nHave a nice day!")
+        if (net.client() && !applied) ui.chatfrag.addMessage("[scarlet]Server check failed...\n[accent]Playing on flood? Try rejoining!\nHave a nice day!")
     }
 
     /** Applies flood changes */
