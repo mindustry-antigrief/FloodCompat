@@ -41,7 +41,7 @@ class FloodCompat : Mod() {
         netClient.addPacketHandler("anticreep") { string: String ->
             if (!applied) return@addPacketHandler // This can eat some anticreep packets right when the player joins but its not a big deal
 
-            val vars = string.split(":", limit = 3)
+            val vars = string.split(":", limit = 4)
 
             val pos = Strings.parseInt(vars[0])
             val rad = Strings.parseInt(vars[1])
