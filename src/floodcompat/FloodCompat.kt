@@ -37,7 +37,7 @@ class FloodCompat : Mod() {
             disable()
             applied = false
         }
-        Events.on(EventType.WorldLoadEvent::class.java) { Log.info("Send flood"); Call.serverPacketReliable("flood", "1.0"); Timer.schedule({ notif() }, 3f); allTiles.clear() }
+        Events.on(EventType.WorldLoadEvent::class.java) { Log.info("Send flood"); Call.serverPacketReliable("flood", "1.1"); Timer.schedule({ notif() }, 3f); allTiles.clear() }
         netClient.addPacketHandler("flood") { if (Strings.canParseInt(it)) enable() }
         netClient.addPacketHandler("anticreep") { string: String ->
             val vars = string.split(':')
