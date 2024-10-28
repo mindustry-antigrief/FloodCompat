@@ -1,7 +1,6 @@
 package floodcompat
 
 import arc.*
-import arc.graphics.*
 import arc.math.*
 import arc.math.geom.*
 import arc.struct.*
@@ -15,7 +14,6 @@ import mindustry.entities.abilities.*
 import mindustry.entities.bullet.*
 import mindustry.game.*
 import mindustry.gen.*
-import mindustry.graphics.*
 import mindustry.mod.*
 import mindustry.world.*
 import mindustry.world.blocks.defense.turrets.*
@@ -27,8 +25,6 @@ class FloodCompat : Mod() {
     private val defaults: MutableList<Any> = mutableListOf()
     /** All the tiles that currently have effects drawn on top */
     private val allTiles = ObjectSet<Tile>()
-    /* Flood changes the bullet type and the overwrites system doesn't support that so we have to manage this manually */
-    private var foreshadowBulletVanilla: BulletType? = null
 
     /** Used to prevent flood from applying twice */
     private var applied: Boolean = false
@@ -123,8 +119,8 @@ class FloodCompat : Mod() {
             *(scathe as ItemTurret).ammoTypes.flatMap { Seq.with(
                 it.value, "buildingDamageMultiplier", 0.3F,
                 it.value, "damage", 700,
-                it.value, "splashDamage", 80)
-            }.toTypedArray(),
+                it.value, "splashDamage", 80
+            ) }.toTypedArray(),
             lancer, "shootType.damage", 10,
             arc, "shootType.damage", 4,
             arc, "shootType.lightningLength", 15,
@@ -132,6 +128,12 @@ class FloodCompat : Mod() {
             parallax, "scaledForce", 7,
             parallax, "range", 230,
             parallax, "damage", 6,
+            *(foreshadow as ItemTurret).ammoTypes.flatMap { Seq.with(
+                it.value, "createChance", 0f,
+                it.value, "damage", 560,
+                it.value, "buildingDamageMultiplier", 1f
+            ) }.toTypedArray(),
+
             // Units
             pulsar, "commands", arrayOf(UnitCommand.moveCommand, UnitCommand.boostCommand, UnitCommand.mineCommand),
             quasar, "commands", arrayOf(UnitCommand.moveCommand, UnitCommand.boostCommand, UnitCommand.mineCommand),
@@ -220,10 +222,6 @@ class FloodCompat : Mod() {
             ) }.toArray()
         )
 
-        // TODO: Implement anticreep packet
-
-
-        foreshadowBulletVanilla = (foreshadow as ItemTurret).ammoTypes.put(Items.surgeAlloy, foreshadowBulletFlood)
         Log.debug("Enabled FloodCompat in ${Time.elapsed()}ms")
     }
 
@@ -257,28 +255,4 @@ class FloodCompat : Mod() {
         defaults.add(field.get(obj))
         field.set(obj, value)
     }
-
-
-
-    private val foreshadowBulletFlood = LaserBulletType().apply {
-        length = 460f
-        damage = 560f
-        width = 75f
-        lifetime = 65f
-        lightningSpacing = 35f
-        lightningLength = 5
-        lightningDelay = 1.1f
-        lightningLengthRand = 15
-        lightningDamage = 50f
-        lightningAngleRand = 40f
-        largeHit = true
-        lightningColor = Pal.heal
-        lightColor = lightningColor
-        shootEffect = Fx.greenLaserCharge
-        sideAngle = 15f
-        sideWidth = 0f
-        sideLength = 0f
-        colors = arrayOf(Color.clear, Color.clear, Color.clear) // TODO: Make this properly invisible
-    }
-
 }
