@@ -22,66 +22,74 @@ import java.lang.reflect.*
 // Based on old foo's implementation
 class FloodCompat : Mod() {
     /** Vanilla values of changed vars for restoration later */
-    private val defaults: MutableList<Any> = mutableListOf()
+    private val defaults = mutableListOf<Any>()
     /** All the tiles that currently have effects drawn on top */
     private val allTiles = ObjectSet<Tile>()
 
     /** Used to prevent flood from applying twice */
-    private var applied: Boolean = false
+    private var applied = false
 
 
     override fun init() {
         Log.info("Flood Compatibility loaded!")
 
-        Events.on(EventType.ResetEvent::class.java) {
-            disable()
-            applied = false
-        }
-        Events.on(EventType.WorldLoadEvent::class.java) { Log.info("Send flood"); Call.serverPacketReliable("flood", "1.1"); Timer.schedule({ notif() }, 3f); allTiles.clear() }
+        Events.on(EventType.ResetEvent::class.java) { disable() }
+        Events.on(EventType.WorldLoadEvent::class.java) { onWorldLoad() }
+        if (!state.isMenu) onWorldLoad() // Mod was initialized after loading a world (realistically just foo's downloading the mod at runtime)
+
         netClient.addPacketHandler("flood") { if (Strings.canParseInt(it)) enable() }
         netClient.addPacketHandler("anticreep") { string: String ->
-            val vars = string.split(':')
+            if (!applied) return@addPacketHandler // This can eat some anticreep packets right when the player joins but its not a big deal
+
+            val vars = string.split(":", limit = 3)
 
             val pos = Strings.parseInt(vars[0])
             val rad = Strings.parseInt(vars[1])
             val time = Strings.parseInt(vars[2])
             val team = Strings.parseInt(vars[3])
 
-            if (pos > 0 && rad > 0 && time > 0 && team > 0) {
-                val tile = world.tile(pos)
-                val color = Team.get(team).color
+            if (pos <= 0 || rad <= 0 || time <= 0 || team <= 0) return@addPacketHandler
+            val tile = world.tile(pos) ?: return@addPacketHandler
+            val color = Team.get(team).color
 
-                val tiles = Seq<Tile>()
-                Geometry.circle(tile.x.toInt(), tile.y.toInt(), rad) { cx: Int, cy: Int ->
-                    val t = world.tile(cx, cy)
-                    if (t != null && !allTiles.contains(t)) {
-                        tiles.add(t)
-                    }
+            val tiles = Seq<Tile>()
+            Geometry.circle(tile.x.toInt(), tile.y.toInt(), rad) { cx: Int, cy: Int ->
+                val t = world.tile(cx, cy)
+                if (t != null && !allTiles.contains(t)) {
+                    tiles.add(t)
                 }
-                allTiles.addAll(tiles)
-
-                val startTime = Time.millis()
-
-                Timer.schedule({
-                    val sizeMultiplier = 1 - (Time.millis() - startTime) / 1000f / time
-                    tiles.each { t: Tile ->
-                        Timer.schedule({
-                            Fx.lightBlock.at(
-                                t.getX(),
-                                t.getY(),
-                                Mathf.random(0.01f, 1.5f * sizeMultiplier),
-                                color
-                            )
-                        }, Mathf.random(1f))
-                    }
-                }, 0f, 1f, time)
-
-                Timer.schedule({
-                    allTiles.removeAll(tiles)
-                    tiles.clear()
-                }, time.toFloat())
             }
+            allTiles.addAll(tiles)
+
+            val startTime = Time.millis()
+
+            Timer.schedule({
+                val sizeMultiplier = 1 - (Time.millis() - startTime) / 1000f / time
+                tiles.each { t: Tile ->
+                    Timer.schedule({
+                        Fx.lightBlock.at(
+                            t.getX(),
+                            t.getY(),
+                            Mathf.random(0.01f, 1.5f * sizeMultiplier),
+                            color
+                        )
+                    }, Mathf.random(1f))
+                }
+            }, 0f, 1f, time)
+
+            Timer.schedule({
+                allTiles.removeAll(tiles)
+                tiles.clear()
+            }, time.toFloat())
         }
+    }
+
+    /** This is a function so that foo's can call it when downloading the mod */
+    private fun onWorldLoad() {
+        Log.debug("Send flood")
+        Call.serverPacketReliable("flood", "1.1")
+        Timer.schedule({ notif() }, 3f)
+        allTiles.clear()
     }
 
     private fun notif(){
@@ -227,7 +235,10 @@ class FloodCompat : Mod() {
 
     /** Reverts flood changes */
     private fun disable() {
-        Log.debug("Disabling FloodCompat")
+        if (!applied) return
+        applied = false
+
+        Log.info("Disabling FloodCompat")
         Time.mark()
 
         defaults.indices.step(3).forEach { (defaults[it + 1] as Field).set(defaults[it], defaults[it + 2]) } // (obj, field, value) -> field.set(obj, value)
