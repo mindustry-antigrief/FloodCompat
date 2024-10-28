@@ -7,8 +7,8 @@ import arc.struct.*
 import arc.util.*
 import mindustry.Vars.*
 import mindustry.ai.*
-import mindustry.content.Blocks.*
 import mindustry.content.*
+import mindustry.content.Blocks.*
 import mindustry.content.UnitTypes.*
 import mindustry.entities.abilities.*
 import mindustry.entities.bullet.*
@@ -85,7 +85,7 @@ class FloodCompat : Mod() {
     }
 
     private fun notif(){
-        if (net.client() && !applied) ui.chatfrag.addMessage("[scarlet]Server check failed...\n[accent]Playing on flood? Try rejoining!\nHave a nice day!")
+        if (net.client() && !applied) ui.chatfrag.addMessage("[scarlet]FloodCompat flood check failed...\n[accent]Playing on flood? Try rejoining!\nHave a nice day!")
     }
 
     /** Applies flood changes */
