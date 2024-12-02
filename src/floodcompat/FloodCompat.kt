@@ -24,7 +24,7 @@ class FloodCompat : Mod() {
     /** Vanilla values of changed vars for restoration later */
     private val defaults = mutableListOf<Any>()
     /** All the tiles that currently have effects drawn on top */
-    private val allTiles = ObjectSet<Tile>()
+    private val allTiles = ObjectMap<Tile, List<Long>>()
 
     /** Used to prevent flood from applying twice */
     private var applied = false
@@ -50,50 +50,42 @@ class FloodCompat : Mod() {
 
             if (pos <= 0 || rad <= 0 || time <= 0 || team <= 0) return@addPacketHandler
             val tile = world.tile(pos) ?: return@addPacketHandler
-            val color = Team.get(team).color
 
-            val tiles = Seq<Tile>()
+            val start = Time.millis()
             Geometry.circle(tile.x.toInt(), tile.y.toInt(), rad) { cx: Int, cy: Int ->
                 val t = world.tile(cx, cy)
-                if (t != null && !allTiles.contains(t)) {
-                    tiles.add(t)
+                if (t != null && !allTiles.containsKey(t)) {
+                    allTiles.put(t, listOf(start, time.toLong(), team.toLong(), start + (time * 1000L))) // start time, overall length, team, end time
                 }
             }
-            allTiles.addAll(tiles)
+        }
 
-            val startTime = Time.millis()
-
-            Timer.schedule({
-                val sizeMultiplier = 1 - (Time.millis() - startTime) / 1000f / time
-                tiles.each { t: Tile ->
+        Timer.schedule({
+            val it = allTiles.iterator()
+            while(it.hasNext()){
+                val entry = it.next()
+                if(Time.millis() >= entry.value[3]){
+                    it.remove()
+                }else{
+                    val sizeMultiplier = 1 - (Time.millis() - entry.value[0]) / 1000f / entry.value[1]
                     Timer.schedule({
                         Fx.lightBlock.at(
-                            t.getX(),
-                            t.getY(),
+                            entry.key.getX(),
+                            entry.key.getY(),
                             Mathf.random(0.01f, 1.5f * sizeMultiplier),
-                            color
+                            Team.get(entry.value[2].toInt()).color
                         )
                     }, Mathf.random(1f))
                 }
-            }, 0f, 1f, time)
-
-            Timer.schedule({
-                allTiles.removeAll(tiles)
-                tiles.clear()
-            }, time.toFloat())
-        }
+            }
+        }, 0f, 1f)
     }
 
     /** This is a function so that foo's can call it when downloading the mod */
     private fun onWorldLoad() {
         Log.debug("Send flood")
-        Call.serverPacketReliable("flood", "1.1")
-        Timer.schedule({ notif() }, 3f)
+        Call.serverPacketReliable("flood", "1.2")
         allTiles.clear()
-    }
-
-    private fun notif(){
-        if (net.client() && !applied) ui.chatfrag.addMessage("[scarlet]FloodCompat flood check failed...\n[accent]Playing on flood? Try rejoining!\nHave a nice day!")
     }
 
     /** Applies flood changes */
@@ -101,7 +93,6 @@ class FloodCompat : Mod() {
         if (applied) throw AssertionError("Tried to enable flood even though it was already enabled!")
         applied = true
 
-        ui.chatfrag.addMessage("[lime]Server check succeeded!\n[accent]Applying flood changes.")
         Log.info("Enabling FloodCompat")
         Time.mark()
 
